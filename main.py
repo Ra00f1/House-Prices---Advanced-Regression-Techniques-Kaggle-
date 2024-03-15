@@ -3,9 +3,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib
 from sklearn.model_selection import train_test_split
-from catboost import CatBoostRegressor
 import tensorflow as tf
-from functools import partial
 
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -203,22 +201,6 @@ if __name__ == '__main__':
 
     models, scores = Machine_Learning(X_train, y_train)
 
-    print(X_test.shape)
-    test_predictions = []
-    print("Predicting the test data")
-    for i in range(X_test.shape[0]):
-        prediction = models.predict(X_test[i:i + 1])[0]
-        test_predictions.append(prediction)
-    print("Test Predictions: ", test_predictions)
-
-    test['SalePrice'] = test_predictions
-    test[['Id', 'SalePrice']].to_csv('Data/predictions_myModel.csv', index=False)
-    print("Predictions saved to predictions_myModel.csv")
-
-    model = MyModel(input_shape=(X_train.shape[1],))  # Pass the input shape
-    model.train(X_train, y_train, epochs=1000, batch_size=32)
-    test_predictions = model.predict(X_test)
-
     print("Models: ", models)
     print("Scores: ", scores)
     best_model = models[scores.index(max(scores))]
@@ -228,8 +210,24 @@ if __name__ == '__main__':
     test_predictions = best_model.predict(X_test)
     print("Test Predictions: ", test_predictions)
 
+    print(X_test.shape)
+    test_predictions = []
+    print("Predicting the test data")
+    for i in range(X_test.shape[0]):
+        prediction = best_model.predict(X_test[i:i + 1])[0]
+        test_predictions.append(prediction)
+    print("Test Predictions: ", test_predictions)
+
+    test['SalePrice'] = test_predictions
+    test[['Id', 'SalePrice']].to_csv('Data/predictions_myModel.csv', index=False)
+    print("Predictions saved to predictions.csv")
+
+    model = MyModel(input_shape=(X_train.shape[1],))  # Pass the input shape
+    model.train(X_train, y_train, epochs=1000, batch_size=32)
+    test_predictions = model.predict(X_test)
+
     # Saving the predictions to a csv file
     # Only write the ID of teh test data and the predictions
     test['SalePrice'] = test_predictions
     test[['Id', 'SalePrice']].to_csv('Data/predictions_myModel.csv', index=False)
-    print("Predictions saved to predictions.csv")
+    print("Predictions saved to predictions_myModel.csv")
