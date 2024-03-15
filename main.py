@@ -4,6 +4,8 @@ import seaborn as sns
 import matplotlib
 from sklearn.model_selection import train_test_split
 from catboost import CatBoostRegressor
+import tensorflow as tf
+from functools import partial
 
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -13,18 +15,77 @@ pd.set_option('display.max_colwidth', None)
 pd.set_option('display.max_columns', None)
 pd.set_option('display.max_rows', None)
 
+
+class MyModel:
+    def __init__(self, input_shape):
+        super().__init__()
+        # Create the model layers
+        self.model = tf.keras.Sequential([
+            tf.keras.layers.Dense(256, activation=tf.nn.leaky_relu, input_shape=input_shape),
+            tf.keras.layers.Dense(256, activation=tf.nn.leaky_relu),
+            tf.keras.layers.Dense(128, activation=tf.nn.leaky_relu),
+            tf.keras.layers.Dense(128, activation=tf.nn.leaky_relu),
+            tf.keras.layers.Dense(64, activation=tf.nn.leaky_relu),
+            tf.keras.layers.Dense(64, activation=tf.nn.leaky_relu),
+            tf.keras.layers.Dense(32, activation=tf.nn.leaky_relu),
+            tf.keras.layers.Dense(32, activation=tf.nn.leaky_relu),
+            tf.keras.layers.Dense(16, activation=tf.nn.leaky_relu),
+            tf.keras.layers.Dense(16, activation=tf.nn.leaky_relu),
+            tf.keras.layers.Dense(1, activation=tf.nn.leaky_relu)
+        ])
+
+        optimizer = tf.keras.optimizers.Adam(learning_rate=0.001,
+                                             beta_1=0.9,
+                                             beta_2=0.999,
+                                             epsilon=1e-07,
+                                             amsgrad=False)
+
+        self.model.compile(loss="mse", optimizer=optimizer, metrics=["mae"])
+
+        # Model checkpoint callback to save the best model based on lowest MAE
+        self.checkpoint = tf.keras.callbacks.ModelCheckpoint(filepath='best_model.h5',
+                                                             monitor='mae',
+                                                             verbose=1,
+                                                             save_best_only=True,
+                                                             mode='min')
+
+    def train(self, X_train, y_train, epochs=1000, batch_size=32):
+
+        history = self.model.fit(X_train, y_train, epochs=epochs, batch_size=batch_size,
+                                 callbacks=[self.checkpoint])
+        return history
+
+    def evaluate(self, X_test, y_test):
+        loss, mae = self.model.evaluate(X_test, y_test)
+        print(f"Test Loss: {loss:.4f}")
+        print(f"Mean Absolute Error (MAE): {mae:.4f}")
+
+    def predict(self, X_new):
+        return self.model.predict(X_new)
+
+    def load_best_model(self):
+        # Loads the best model saved during training based on lowest validation MAE.
+        self.model = tf.keras.models.load_model('best_model.h5')
+
+
 def load_data():
     data = pd.read_csv('Data/train.csv')
     test = pd.read_csv('Data/test.csv')
     return data, test
 
 
-def Process_Data(data):
-    # Changing the data type of the columns to category and then to numerical values for the model
+# Changing the data type of the columns to category and then to numerical values for the model
+def data_categories(data):
     for column in data.columns:
         if data[column].dtype == 'object':
             data[column] = data[column].astype('category')
             data[column] = data[column].cat.codes
+
+    return data
+
+
+def Process_Data(data):
+    data = data_categories(data)
 
     # Filling the missing values with the mean of the column
     data = data.fillna(0)
@@ -43,11 +104,7 @@ def Process_Data(data):
 
 
 def Process_Test_Data(test):
-    # Changing the data type of the columns to category and then to numerical values for the model
-    for column in test.columns:
-        if test[column].dtype == 'object':
-            test[column] = test[column].astype('category')
-            test[column] = test[column].cat.codes
+    test = data_categories(test)
 
     # Filling the missing values with the mean of the column
     test = test.fillna(0)
@@ -80,7 +137,6 @@ def Data_Summary(data):
 def Machine_Learning(X_train, y_train):
     X_train, X_test, y_train, y_test = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
 
-    # Logistic Regression
     log_reg = lm.LogisticRegression()
     log_reg.fit(X_train, y_train)
     log_reg_score = log_reg.score(X_test, y_test)
@@ -126,15 +182,13 @@ def Machine_Learning(X_train, y_train):
     Theil_reg_score = Theil_reg.score(X_test, y_test)
     print("Theil Testing Accuracy: ", Theil_reg_score)
 
-    regressor = CatBoostRegressor()
-    regressor.fit(X_train, y_train)
-    regressor_score = regressor.score(X_test, y_test)
-    print("CatBoost Testing Accuracy: ", regressor_score)
-
-    models = [log_reg, lin_reg, Sgd_reg, Ridge_reg, Lasso_reg, Elastic_reg, Huber_reg, Ransac_reg, Theil_reg, regressor]
-    scores = [log_reg_score, lin_reg_score, Sgd_reg_score, Ridge_reg_score, Lasso_reg_score, Elastic_reg_score, Huber_reg_score, Ransac_reg_score, Theil_reg_score, regressor_score]
+    models = [log_reg, lin_reg, Sgd_reg, Ridge_reg, Lasso_reg, Elastic_reg, Huber_reg, Ransac_reg, Theil_reg]
+    scores = [log_reg_score, lin_reg_score, Sgd_reg_score, Ridge_reg_score, Lasso_reg_score, Elastic_reg_score, Huber_reg_score, Ransac_reg_score, Theil_reg_score]
 
     return models, scores
+
+#
+# return models, scores
 
 
 if __name__ == '__main__':
@@ -149,6 +203,22 @@ if __name__ == '__main__':
 
     models, scores = Machine_Learning(X_train, y_train)
 
+    print(X_test.shape)
+    test_predictions = []
+    print("Predicting the test data")
+    for i in range(X_test.shape[0]):
+        prediction = models.predict(X_test[i:i + 1])[0]
+        test_predictions.append(prediction)
+    print("Test Predictions: ", test_predictions)
+
+    test['SalePrice'] = test_predictions
+    test[['Id', 'SalePrice']].to_csv('Data/predictions_myModel.csv', index=False)
+    print("Predictions saved to predictions_myModel.csv")
+
+    model = MyModel(input_shape=(X_train.shape[1],))  # Pass the input shape
+    model.train(X_train, y_train, epochs=1000, batch_size=32)
+    test_predictions = model.predict(X_test)
+
     print("Models: ", models)
     print("Scores: ", scores)
     best_model = models[scores.index(max(scores))]
@@ -161,5 +231,5 @@ if __name__ == '__main__':
     # Saving the predictions to a csv file
     # Only write the ID of teh test data and the predictions
     test['SalePrice'] = test_predictions
-    test[['Id', 'SalePrice']].to_csv('Data/predictions.csv', index=False)
+    test[['Id', 'SalePrice']].to_csv('Data/predictions_myModel.csv', index=False)
     print("Predictions saved to predictions.csv")
